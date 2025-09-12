@@ -167,8 +167,7 @@ wss.on("connection", async (ws) => {
     console.error("WebSocket error:", error);
   });
 });
-
-const PORT = 4000;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🌐 WebSocket server running on ws://localhost:${PORT}`);
