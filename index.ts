@@ -4,9 +4,8 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
 import { analyzeText } from "./utils/text-intelligence";
-import { deepgram } from "./utils/deepgram";
 import { analyzeVideoFrame } from "./utils/vision-analysis";
-import { LiveTranscriptionEvents } from "@deepgram/sdk";
+import { transcribeAudio, checkOpenAIConfiguration, testOpenAIConnection } from "./utils/openai-transcription";
 
 const app = express();
 app.use(express.json());
@@ -46,70 +45,88 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
+// POST endpoint to transcribe audio using OpenAI Whisper
+app.post("/transcribe", async (req, res) => {
+  console.log("🎤 Received transcription request");
+
+  try {
+    const { audioData, mimeType } = req.body;
+
+    if (!audioData) {
+      return res.status(400).json({ error: "Audio data is required" });
+    }
+
+    console.log("🎤 Processing audio data, MIME type:", mimeType);
+
+    // Convert base64 audio to buffer
+    const audioBuffer = Buffer.from(audioData, 'base64');
+    console.log("🎤 Audio buffer size:", audioBuffer.length, "bytes");
+
+    // Check if buffer has sufficient data for Whisper
+    if (audioBuffer.length < 1000) {
+      console.log("🎤 Audio buffer too small for Whisper:", audioBuffer.length, "bytes");
+      return res.status(400).json({ error: "Audio data too small for transcription" });
+    }
+
+    // Transcribe using OpenAI Whisper
+    const transcriptionResult = await transcribeAudio(audioBuffer, mimeType || 'audio/webm');
+
+    console.log("🎤 Transcription successful:", transcriptionResult.text);
+
+    res.json({
+      text: transcriptionResult.text,
+      confidence: transcriptionResult.confidence,
+      isFinal: transcriptionResult.isFinal,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error("❌ Transcription error:", error);
+    res.status(500).json({ error: "Transcription failed" });
+  }
+});
+
 const server = http.createServer(app);
 
 const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws) => {
+wss.on("connection", async (ws) => {
   console.log("Client connected ✅");
 
-  // Create a new Deepgram connection for this client
-  const deepgramWS = deepgram.listen.live({
-    model: "nova-2",
-    language: "en-US",
-    smart_format: true,
-    interim_results: false,
-    utterance_end_ms: 1000,
-  });
-
-  deepgramWS.on(LiveTranscriptionEvents.Open, () => {
-    console.log("Deepgram connection opened");
-  });
-
-  deepgramWS.on(LiveTranscriptionEvents.Transcript, (data) => {
-    console.log("Transcript received:", data);
-
-    if (data.channel && data.channel.alternatives && data.channel.alternatives[0]) {
-      const transcript = data.channel.alternatives[0].transcript;
-      const confidence = data.channel.alternatives[0].confidence;
-
-      if (transcript && transcript.trim().length > 0) {
-        // Send transcription back to client
-        ws.send(JSON.stringify({
-          type: 'transcription',
-          data: {
-            text: transcript,
-            confidence: confidence
-          },
-          timestamp: Date.now()
-        }));
-      }
-    }
-  });
-
-  deepgramWS.on(LiveTranscriptionEvents.Error, (error) => {
-    console.error("Deepgram error:", error);
+  // Check OpenAI configuration on connection
+  console.log("� Checking OpenAI configuration...");
+  if (!checkOpenAIConfiguration()) {
+    console.error("❌ OpenAI not configured properly");
     ws.send(JSON.stringify({
       type: 'error',
-      data: 'Transcription error occurred',
+      data: 'OpenAI configuration error',
       timestamp: Date.now()
     }));
-  });
+    return;
+  }
+
+  // Test OpenAI connection
+  console.log("🔗 Testing OpenAI connection...");
+  const connectionTest = await testOpenAIConnection();
+  if (!connectionTest) {
+    console.error("❌ OpenAI connection test failed");
+    ws.send(JSON.stringify({
+      type: 'error',
+      data: 'OpenAI connection failed',
+      timestamp: Date.now()
+    }));
+    return;
+  }
+
+  console.log("✅ OpenAI Whisper ready for transcription");
 
   // Handle incoming messages from client
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString());
+      console.log("📨 Received message from client:", data.type, "at", new Date().toISOString());
 
       switch (data.type) {
-        case 'audio':
-          // Convert base64 audio to buffer and send to Deepgram
-          const audioBuffer = Buffer.from(data.data, 'base64');
-          if (deepgramWS.getReadyState() === 1) {
-            deepgramWS.send(audioBuffer.buffer);
-          }
-          break;
-
         case 'video-frame':
           // Analyze video frame with GPT-4o Vision
           try {
@@ -144,9 +161,6 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Client disconnected ❌");
-    if (deepgramWS.getReadyState() === 1) {
-      deepgramWS.finish();
-    }
   });
 
   ws.on("error", (error) => {
