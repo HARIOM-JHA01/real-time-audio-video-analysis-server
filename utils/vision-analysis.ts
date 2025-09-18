@@ -9,6 +9,7 @@ interface VideoAnalysisResult {
     objects?: string[];
     scene?: string;
     mood?: string;
+    emotions?: { [key: string]: number };
 }
 
 export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnalysisResult> {
@@ -21,7 +22,7 @@ export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnaly
                     content: [
                         {
                             type: "text",
-                            text: "Analyze this image and provide: 1) A brief description of what you see 2) Key objects present 3) The general scene/setting 4) The mood/atmosphere. Keep your response concise but informative."
+                            text: "Analyze this image focusing on emotions and environment. Respond in plain conversational English without any markdown formatting, bullet points, or numbered lists. Provide a natural description covering: the scene and environment, key objects visible, the general setting, detailed emotion analysis including happiness, sadness, excitement, calmness, and stress levels, plus overall mood assessment. Focus on emotional state and atmosphere rather than personal identification. Keep the response flowing and natural like you're describing what you see to a friend."
                         },
                         {
                             type: "image_url",
@@ -33,7 +34,7 @@ export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnaly
                     ]
                 }
             ],
-            max_tokens: 200,
+            max_tokens: 300,
             temperature: 0.3,
         });
 
@@ -42,16 +43,18 @@ export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnaly
         // Parse the response to extract structured data
         const description = content;
 
-        // Simple object detection based on common objects mentioned
+        // Extract structured data
         const objects = extractObjects(content);
         const scene = extractScene(content);
         const mood = extractMood(content);
+        const emotions = extractEmotions(content);
 
         return {
             description,
             objects,
             scene,
-            mood
+            mood,
+            emotions
         };
     } catch (error) {
         console.error('Error analyzing video frame:', error);
@@ -62,13 +65,13 @@ export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnaly
 function extractObjects(text: string): string[] {
     const objects: string[] = [];
     const commonObjects = [
-        'person', 'people', 'man', 'woman', 'child', 'baby',
         'laptop', 'computer', 'monitor', 'screen', 'keyboard', 'mouse',
         'chair', 'desk', 'table', 'bed', 'sofa',
         'book', 'phone', 'coffee', 'cup', 'bottle',
         'plant', 'flower', 'tree', 'window', 'door',
         'light', 'lamp', 'camera', 'microphone',
-        'cat', 'dog', 'bird', 'car', 'bicycle'
+        'cat', 'dog', 'bird', 'car', 'bicycle',
+        'headphones', 'glasses', 'clock', 'picture', 'frame'
     ];
 
     const lowerText = text.toLowerCase();
@@ -126,4 +129,53 @@ function extractMood(text: string): string {
     }
 
     return 'neutral';
+}
+
+function extractEmotions(text: string): { [key: string]: number } {
+    const lowerText = text.toLowerCase();
+    const emotions: { [key: string]: number } = {};
+
+    // Happiness indicators
+    const happinessWords = ['happy', 'joy', 'joyful', 'smiling', 'cheerful', 'pleased', 'delighted', 'content', 'upbeat'];
+    const happinessScore = happinessWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.2 : 0), 0);
+    emotions.happiness = Math.min(happinessScore, 1.0);
+
+    // Sadness indicators
+    const sadnessWords = ['sad', 'melancholy', 'down', 'depressed', 'gloomy', 'unhappy', 'sorrowful'];
+    const sadnessScore = sadnessWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.25 : 0), 0);
+    emotions.sadness = Math.min(sadnessScore, 1.0);
+
+    // Excitement indicators
+    const excitementWords = ['excited', 'energetic', 'enthusiastic', 'thrilled', 'animated', 'vibrant'];
+    const excitementScore = excitementWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.25 : 0), 0);
+    emotions.excitement = Math.min(excitementScore, 1.0);
+
+    // Calmness indicators
+    const calmnessWords = ['calm', 'peaceful', 'relaxed', 'serene', 'tranquil', 'composed'];
+    const calmnessScore = calmnessWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.25 : 0), 0);
+    emotions.calmness = Math.min(calmnessScore, 1.0);
+
+    // Stress indicators
+    const stressWords = ['stressed', 'tense', 'anxious', 'worried', 'overwhelmed', 'frantic', 'agitated'];
+    const stressScore = stressWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.25 : 0), 0);
+    emotions.stress = Math.min(stressScore, 1.0);
+
+    // Focus indicators
+    const focusWords = ['focused', 'concentrated', 'attentive', 'engaged', 'absorbed'];
+    const focusScore = focusWords.reduce((score, word) => 
+        score + (lowerText.includes(word) ? 0.25 : 0), 0);
+    emotions.focus = Math.min(focusScore, 1.0);
+
+    // Default neutral state if no emotions detected
+    const totalEmotions = Object.values(emotions).reduce((sum, val) => sum + val, 0);
+    if (totalEmotions === 0) {
+        emotions.neutral = 0.7;
+    }
+
+    return emotions;
 }
