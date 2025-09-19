@@ -45,6 +45,30 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
+// POST endpoint for vision analysis (direct API access)
+app.post("/vision-analysis", async (req, res) => {
+  console.log("🎥 Received vision analysis request");
+  try {
+    const { base64Image } = req.body;
+
+    if (!base64Image) {
+      return res.status(400).json({ error: "Image data is required" });
+    }
+
+    console.log("🎥 Processing vision analysis for image, size:", 
+      base64Image.length > 100 ? `${base64Image.substring(0, 100)}... (${base64Image.length} chars)` : base64Image);
+
+    // Analyze using OpenAI Vision
+    const analysisResult = await analyzeVideoFrame(base64Image);
+    console.log("🎥 Vision analysis successful:", analysisResult);
+
+    res.json(analysisResult);
+  } catch (error) {
+    console.error("❌ Vision analysis error:", error);
+    res.status(500).json({ error: "Vision analysis failed" });
+  }
+});
+
 // POST endpoint to transcribe audio using OpenAI Whisper
 app.post("/transcribe", async (req, res) => {
   console.log("🎤 Received transcription request");

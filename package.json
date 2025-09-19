@@ -3,6 +3,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "bun run index.ts",
     "dev": "bun run --watch index.ts",
@@ -20,6 +23,7 @@
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",
+    "axios": "^1.12.2",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "openai": "^5.20.1",
