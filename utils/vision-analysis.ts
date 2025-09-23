@@ -15,20 +15,20 @@ interface VideoAnalysisResult {
 export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnalysisResult> {
     try {
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-4.1-mini",
             messages: [
                 {
                     role: "user",
                     content: [
                         {
                             type: "text",
-                            text: "Analyze this image focusing on emotions and environment. Respond in plain conversational English without any markdown formatting, bullet points, or numbered lists. Provide a natural description covering: the scene and environment, key objects visible, the general setting, detailed emotion analysis including happiness, sadness, excitement, calmness, and stress levels, plus overall mood assessment. Focus on emotional state and atmosphere rather than personal identification. Keep the response flowing and natural like you're describing what you see to a friend."
+                            text: "Analyze this image focusing on emotions and environment. Respond in plain conversational English without any markdown formatting, bullet points, or numbered lists. Provide a natural description covering: the scene and environment, key objects visible, the general setting, detailed emotion analysis including happiness, sadness, excitement, calmness, and stress levels, plus overall mood assessment. Focus on emotional state and atmosphere rather than personal identification. Keep the response flowing and natural like you're describing what you see to a friend. when the image is completely dark or unclear, respond with 'The image is too dark or unclear to analyze.'",
                         },
                         {
                             type: "image_url",
                             image_url: {
                                 url: `data:image/jpeg;base64,${base64Image}`,
-                                detail: "low" // Use low detail for faster processing
+                                detail: "low"
                             }
                         }
                     ]
@@ -40,10 +40,8 @@ export async function analyzeVideoFrame(base64Image: string): Promise<VideoAnaly
 
         const content = response.choices[0]?.message?.content || "No description available";
 
-        // Parse the response to extract structured data
         const description = content;
 
-        // Extract structured data
         const objects = extractObjects(content);
         const scene = extractScene(content);
         const mood = extractMood(content);
@@ -112,20 +110,36 @@ function extractScene(text: string): string {
 function extractMood(text: string): string {
     const lowerText = text.toLowerCase();
 
-    if (lowerText.includes('happy') || lowerText.includes('joy') || lowerText.includes('smiling')) {
-        return 'happy';
+    // Check angry first as it's distinctive
+    if (lowerText.includes('angry') || lowerText.includes('mad') || lowerText.includes('furious') ||
+        lowerText.includes('frown') || lowerText.includes('scowl') || lowerText.includes('irate')) {
+        return 'angry';
     }
-    if (lowerText.includes('sad') || lowerText.includes('melancholy')) {
+
+    // Check for sadness before happiness (since "unhappy" contains "happy")
+    if (lowerText.includes('sad') || lowerText.includes('melancholy') || lowerText.includes('unhappy') ||
+        lowerText.includes('sorrowful') || lowerText.includes('down') || lowerText.includes('depressed')) {
         return 'sad';
     }
-    if (lowerText.includes('focused') || lowerText.includes('concentrated') || lowerText.includes('working')) {
+
+    if (lowerText.includes('happy') || lowerText.includes('joy') || lowerText.includes('smiling') ||
+        lowerText.includes('cheerful') || lowerText.includes('delighted')) {
+        return 'happy';
+    }
+    if (lowerText.includes('excited') || lowerText.includes('energetic') || lowerText.includes('enthusiastic') ||
+        lowerText.includes('thrilled')) {
+        return 'excited';
+    }
+    if (lowerText.includes('focused') || lowerText.includes('concentrated') || lowerText.includes('attentive')) {
         return 'focused';
     }
-    if (lowerText.includes('relaxed') || lowerText.includes('calm') || lowerText.includes('peaceful')) {
-        return 'relaxed';
+    if (lowerText.includes('calm') || lowerText.includes('peaceful') || lowerText.includes('relaxed') ||
+        lowerText.includes('serene')) {
+        return 'calm';
     }
-    if (lowerText.includes('busy') || lowerText.includes('active')) {
-        return 'busy';
+    if (lowerText.includes('stressed') || lowerText.includes('tense') || lowerText.includes('anxious') ||
+        lowerText.includes('worried')) {
+        return 'stressed';
     }
 
     return 'neutral';

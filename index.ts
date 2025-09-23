@@ -11,7 +11,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Enable CORS for development
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -28,7 +27,6 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// POST endpoint to analyze text
 app.post("/analyze", async (req, res) => {
   const { text } = req.body;
 
@@ -45,9 +43,7 @@ app.post("/analyze", async (req, res) => {
   }
 });
 
-// POST endpoint for vision analysis (direct API access)
 app.post("/vision-analysis", async (req, res) => {
-  console.log("🎥 Received vision analysis request");
   try {
     const { base64Image } = req.body;
 
@@ -55,23 +51,20 @@ app.post("/vision-analysis", async (req, res) => {
       return res.status(400).json({ error: "Image data is required" });
     }
 
-    console.log("🎥 Processing vision analysis for image, size:", 
+    console.log("Processing vision analysis for image, size:", 
       base64Image.length > 100 ? `${base64Image.substring(0, 100)}... (${base64Image.length} chars)` : base64Image);
 
-    // Analyze using OpenAI Vision
     const analysisResult = await analyzeVideoFrame(base64Image);
-    console.log("🎥 Vision analysis successful:", analysisResult);
+    console.log("Vision analysis successful:", analysisResult);
 
     res.json(analysisResult);
   } catch (error) {
-    console.error("❌ Vision analysis error:", error);
+    console.error("Vision analysis error:", error);
     res.status(500).json({ error: "Vision analysis failed" });
   }
 });
 
-// POST endpoint to transcribe audio using OpenAI Whisper
 app.post("/transcribe", async (req, res) => {
-  console.log("🎤 Received transcription request");
 
   try {
     const { audioData, mimeType } = req.body;
@@ -80,22 +73,21 @@ app.post("/transcribe", async (req, res) => {
       return res.status(400).json({ error: "Audio data is required" });
     }
 
-    console.log("🎤 Processing audio data, MIME type:", mimeType);
+    console.log("Processing audio data, MIME type:", mimeType);
 
     // Convert base64 audio to buffer
     const audioBuffer = Buffer.from(audioData, 'base64');
-    console.log("🎤 Audio buffer size:", audioBuffer.length, "bytes");
+    console.log("Audio buffer size:", audioBuffer.length, "bytes");
 
     // Check if buffer has sufficient data for Whisper
     if (audioBuffer.length < 1000) {
-      console.log("🎤 Audio buffer too small for Whisper:", audioBuffer.length, "bytes");
+      console.log("Audio buffer too small for Whisper:", audioBuffer.length, "bytes");
       return res.status(400).json({ error: "Audio data too small for transcription" });
     }
 
-    // Transcribe using OpenAI Whisper
     const transcriptionResult = await transcribeAudio(audioBuffer, mimeType || 'audio/webm');
 
-    console.log("🎤 Transcription successful:", transcriptionResult.text);
+    console.log("Transcription successful:", transcriptionResult.text);
 
     res.json({
       text: transcriptionResult.text,
@@ -105,7 +97,7 @@ app.post("/transcribe", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Transcription error:", error);
+    console.error("Transcription error:", error);
     res.status(500).json({ error: "Transcription failed" });
   }
 });
@@ -115,12 +107,11 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (ws) => {
-  console.log("Client connected ✅");
+  console.log("Client connected");
 
-  // Check OpenAI configuration on connection
-  console.log("� Checking OpenAI configuration...");
+  console.log("Checking OpenAI configuration...");
   if (!checkOpenAIConfiguration()) {
-    console.error("❌ OpenAI not configured properly");
+    console.error("OpenAI not configured properly");
     ws.send(JSON.stringify({
       type: 'error',
       data: 'OpenAI configuration error',
@@ -129,11 +120,10 @@ wss.on("connection", async (ws) => {
     return;
   }
 
-  // Test OpenAI connection
-  console.log("🔗 Testing OpenAI connection...");
+  console.log("Testing OpenAI connection...");
   const connectionTest = await testOpenAIConnection();
   if (!connectionTest) {
-    console.error("❌ OpenAI connection test failed");
+    console.error("OpenAI connection test failed");
     ws.send(JSON.stringify({
       type: 'error',
       data: 'OpenAI connection failed',
@@ -142,17 +132,15 @@ wss.on("connection", async (ws) => {
     return;
   }
 
-  console.log("✅ OpenAI Whisper ready for transcription");
+  console.log("OpenAI Whisper ready for transcription");
 
-  // Handle incoming messages from client
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString());
-      console.log("📨 Received message from client:", data.type, "at", new Date().toISOString());
+      console.log("Received message from client:", data.type, "at", new Date().toISOString());
 
       switch (data.type) {
         case 'video-frame':
-          // Analyze video frame with GPT-4o Vision
           try {
             const analysis = await analyzeVideoFrame(data.data);
             ws.send(JSON.stringify({
@@ -169,7 +157,33 @@ wss.on("connection", async (ws) => {
             }));
           }
           break;
-
+        case 'audio-chunk':
+          try {
+            const audioBuffer = Buffer.from(data.data, 'base64');
+            if (audioBuffer.length < 1000) {
+              console.log("Audio chunk too small for Whisper:", audioBuffer.length, "bytes");
+              ws.send(JSON.stringify({
+                type: 'error',
+                data: 'Audio chunk too small for transcription',
+                timestamp: Date.now()
+              }));
+              return;
+            }
+            const transcription = await transcribeAudio(audioBuffer, data.mimeType || 'audio/webm');
+            ws.send(JSON.stringify({
+              type: 'transcription',
+              data: transcription,
+              timestamp: Date.now()
+            }));
+          } catch (error) {
+            console.error('Transcription error:', error);
+            ws.send(JSON.stringify({
+              type: 'error',
+              data: 'Transcription failed',
+              timestamp: Date.now()
+            }));
+          }
+          break;
         default:
           console.log('Unknown message type:', data.type);
       }
@@ -184,7 +198,7 @@ wss.on("connection", async (ws) => {
   });
 
   ws.on("close", () => {
-    console.log("Client disconnected ❌");
+    console.log("Client disconnected");
   });
 
   ws.on("error", (error) => {
@@ -193,6 +207,6 @@ wss.on("connection", async (ws) => {
 });
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`🌐 WebSocket server running on ws://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`WebSocket server running on ws://localhost:${PORT}`);
 });
